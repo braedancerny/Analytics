@@ -4,6 +4,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QMessageBox, QProgressBar, QDialog, QTreeWidget, QTreeWidgetItem, QLineEdit)
 from PyQt5.QtCore import Qt
 import pandas as pd
+import numpy as np
 from qt_single_regression import SingleRegressionTab
 from qt_multiple_regression import MultipleRegressionTab
 from qt_data_viewer import DataViewerTab
@@ -17,58 +18,26 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Regression Analysis Tool")
         self.setGeometry(100, 100, 1200, 700)
-        self.setMinimumSize(1000, 600)
+        self.setMinimumSize(800, 400)
+        self.entries = {}
 
-        # Apply dark theme
         self.setStyleSheet("""
-            QMainWindow {
-                background-color: #2b2b2b;
-            }
-            QLabel {
-                color: #ffffff;
-                font-size: 14px;
-            }
-            QPushButton {
-                background-color: #4a4a4a;
-                color: #ffffff;
-                border: 1px solid #555555;
-                padding: 5px;
-                border-radius: 3px;
-            }
-            QPushButton:hover {
-                background-color: #666666;
-            }
-            QComboBox {
-                background-color: #3c3c3c;
-                color: #ffffff;
-                border: 1px solid #555555;
-                padding: 3px;
-            }
-            QTabWidget::pane {
-                border: 1px solid #555555;
-                background-color: #2b2b2b;
-            }
-            QTabBar::tab {
-                background-color: #3c3c3c;
-                color: #ffffff;
-                padding: 8px;
-            }
-            QTabBar::tab:selected {
-                background-color: #4a90e2;
-            }
-            QProgressBar {
-                border: 1px solid #555555;
-                background-color: #3c3c3c;
-                color: #ffffff;
-            }
-            QProgressBar::chunk {
-                background-color: #4a90e2;
-            }
+            QMainWindow { background-color: #2b2b2b; }
+            QLabel { color: #ffffff; font-size: 14px; }
+            QPushButton { background-color: #4a4a4a; color: #ffffff; border: 1px solid #555555; padding: 5px; border-radius: 3px; }
+            QPushButton:hover { background-color: #666666; }
+            QComboBox { background-color: #3c3c3c; color: #ffffff; border: 1px solid #555555; padding: 3px; }
+            QTabWidget::pane { border: 1px solid #555555; background-color: #2b2b2b; }
+            QTabBar::tab { background-color: #3c3c3c; color: #ffffff; padding: 8px; }
+            QTabBar::tab:selected { background-color: #4a90e2; }
+            QProgressBar { border: 1px solid #555555; background-color: #3c3c3c; color: #ffffff; }
+            QProgressBar::chunk { background-color: #4a90e2; }
         """)
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.layout = QVBoxLayout(self.central_widget)
+        self.layout.setContentsMargins(10, 10, 10, 10)
 
         self.header = QLabel("Regression Analysis Tool")
         self.header.setStyleSheet("font-size: 18pt; font-weight: bold; color: #4a90e2;")
@@ -77,6 +46,7 @@ class MainWindow(QMainWindow):
 
         self.button_frame = QWidget()
         self.button_layout = QHBoxLayout(self.button_frame)
+        self.button_layout.setSpacing(10)
         self.load_button = QPushButton("Load Excel File")
         self.load_button.clicked.connect(self.load_data)
         self.clear_button = QPushButton("Clear All")
@@ -91,13 +61,10 @@ class MainWindow(QMainWindow):
         self.fill_combo.addItems(["zero", "mean", "median", "drop"])
         self.fill_combo.setCurrentText("zero")
 
-        self.button_layout.addWidget(self.load_button)
-        self.button_layout.addWidget(self.clear_button)
-        self.button_layout.addWidget(self.save_plot_button)
-        self.button_layout.addWidget(self.mapping_button)
-        self.button_layout.addWidget(self.fill_label)
-        self.button_layout.addWidget(self.fill_combo)
-        self.button_layout.addStretch()
+        for widget in [self.load_button, self.clear_button, self.save_plot_button, 
+                       self.mapping_button, self.fill_label, self.fill_combo]:
+            self.button_layout.addWidget(widget)
+        self.button_layout.addStretch(1)
         self.layout.addWidget(self.button_frame)
 
         self.tabs = QTabWidget()
@@ -110,16 +77,15 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.multiple_tab, "Multiple Regression")
         self.tabs.addTab(self.data_viewer_tab, "Data Viewer")
         self.tabs.addTab(self.clustering_tab, "Clustering")
-        self.layout.addWidget(self.tabs)
+        self.layout.addWidget(self.tabs, stretch=1)
 
         self.status_frame = QWidget()
         self.status_layout = QHBoxLayout(self.status_frame)
         self.progress = QProgressBar()
         self.progress.setMaximum(100)
         self.status_label = QLabel("Ready")
-        self.status_layout.addWidget(self.progress)
+        self.status_layout.addWidget(self.progress, stretch=1)
         self.status_layout.addWidget(self.status_label)
-        self.status_layout.addStretch()
         self.layout.addWidget(self.status_frame)
 
     def detect_header_row(self, file_path, sheet_name):
@@ -134,31 +100,35 @@ class MainWindow(QMainWindow):
         df = df.loc[:, ~df.columns.str.contains('^Unnamed')].copy()
         for col in df.columns:
             if df[col].dtype == 'object':
-                try:
-                    pd.to_numeric(df[col], errors='raise')
-                except ValueError:
-                    test_series = pd.to_numeric(df[col], errors='coerce')
-                    if test_series.isna().all():
-                        unique_values = df[col].dropna().unique()
-                        if col not in string_mappings:
-                            string_mappings[col] = {val: idx for idx, val in enumerate(unique_values)}
-                        else:
-                            current_max = max(string_mappings[col].values(), default=-1)
-                            for val in unique_values:
-                                if val not in string_mappings[col]:
-                                    current_max += 1
-                                    string_mappings[col][val] = current_max
-                        df.loc[:, col] = df[col].map(string_mappings[col])
+                # Convert to numeric, strings become NaN
+                numeric_series = pd.to_numeric(df[col], errors='coerce')
+                if numeric_series.isna().all() and not df[col].isna().all():
+                    # Fully non-numeric column (e.g., all strings), map to integers
+                    unique_values = df[col].dropna().unique()
+                    if col not in string_mappings:
+                        string_mappings[col] = {val: idx + 1 for idx, val in enumerate(unique_values)}
                     else:
-                        df.loc[:, col] = pd.to_numeric(df[col], errors='coerce')
+                        current_max = max(string_mappings[col].values(), default=0)
+                        for val in unique_values:
+                            if val not in string_mappings[col]:
+                                current_max += 1
+                                string_mappings[col][val] = current_max
+                    df[col] = df[col].map(string_mappings[col]).astype(float)
+                else:
+                    # Mixed or numeric column, keep as numeric with NaNs
+                    df[col] = numeric_series
+            # Ensure column is numeric (float to handle NaN)
+            if df[col].dtype not in [np.float64, np.int64]:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
         if fill_method == "zero":
-            return df.fillna(0)
+            df = df.fillna(0)
         elif fill_method == "mean":
-            return df.fillna(df.mean(numeric_only=True))
+            df = df.fillna(df.mean(numeric_only=True))
         elif fill_method == "median":
-            return df.fillna(df.median(numeric_only=True))
+            df = df.fillna(df.median(numeric_only=True))
         elif fill_method == "drop":
-            return df.dropna()
+            df = df.dropna()
+        print("Processed Data Types:", df.dtypes)
         return df
 
     def load_data(self):
@@ -250,33 +220,35 @@ class MainWindow(QMainWindow):
         tree.setColumnWidth(1, 200)
         tree.setColumnWidth(2, 100)
         tree.setStyleSheet("background-color: #3c3c3c; color: #ffffff; border: 1px solid #555555;")
-        entries = {}
+        self.entries.clear()
         for col, mapping in string_mappings.items():
             for string, num in mapping.items():
                 item = QTreeWidgetItem([col, str(string), str(num)])
                 tree.addTopLevelItem(item)
-                entries[item] = (col, string)
+                self.entries[(col, str(string))] = item
         tree.itemDoubleClicked.connect(self.edit_number)
         layout.addWidget(tree)
         dialog.exec_()
 
     def edit_number(self, item, column):
-        col, string = entries[item]
-        current_num = item.text(2)
-        edit_dialog = QDialog(self)
-        edit_dialog.setWindowTitle("Edit Number")
-        edit_dialog.setGeometry(250, 250, 250, 150)
-        edit_dialog.setStyleSheet("background-color: #2b2b2b; color: #ffffff;")
-        layout = QVBoxLayout(edit_dialog)
-        layout.addWidget(QLabel(f"Column: {col}"))
-        layout.addWidget(QLabel(f"String: {string}"))
-        num_entry = QLineEdit(current_num)
-        num_entry.setStyleSheet("background-color: #3c3c3c; color: #ffffff; border: 1px solid #555555;")
-        layout.addWidget(num_entry)
-        save_button = QPushButton("Save")
-        save_button.clicked.connect(lambda: self.save_edit(col, string, num_entry.text(), item, edit_dialog))
-        layout.addWidget(save_button)
-        edit_dialog.exec_()
+        for (col, string), tree_item in self.entries.items():
+            if tree_item == item:
+                current_num = item.text(2)
+                edit_dialog = QDialog(self)
+                edit_dialog.setWindowTitle("Edit Number")
+                edit_dialog.setGeometry(250, 250, 250, 150)
+                edit_dialog.setStyleSheet("background-color: #2b2b2b; color: #ffffff;")
+                layout = QVBoxLayout(edit_dialog)
+                layout.addWidget(QLabel(f"Column: {col}"))
+                layout.addWidget(QLabel(f"String: {string}"))
+                num_entry = QLineEdit(current_num)
+                num_entry.setStyleSheet("background-color: #3c3c3c; color: #ffffff; border: 1px solid #555555;")
+                layout.addWidget(num_entry)
+                save_button = QPushButton("Save")
+                save_button.clicked.connect(lambda: self.save_edit(col, string, num_entry.text(), item, edit_dialog))
+                layout.addWidget(save_button)
+                edit_dialog.exec_()
+                break
 
     def save_edit(self, col, string, new_num, item, dialog):
         global string_mappings, data
