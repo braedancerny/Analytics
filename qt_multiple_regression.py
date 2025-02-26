@@ -1,14 +1,17 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, 
                              QPushButton, QTreeWidget, QTreeWidgetItem, QMessageBox, 
-                             QMainWindow, QScrollArea)
+                             QMainWindow, QScrollArea, QSizePolicy, QCheckBox, QLineEdit)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtCore import Qt
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import r2_score
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+from sklearn.feature_selection import RFE
+from sklearn.model_selection import cross_val_score
 import numpy as np
 import pandas as pd
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 import plotly.graph_objects as go
+import plotly.io as pio
 
 class MultipleRegressionTab(QWidget):
     def __init__(self, parent=None):
@@ -21,49 +24,20 @@ class MultipleRegressionTab(QWidget):
         self.last_X = None
         self.last_Y = None
         self.plot_window = None
-        self.plot_view = None
+        self.is_dark_mode = True
 
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #2b2b2b;
-            }
-            QLabel {
-                color: #ffffff;
-                font-size: 14px;
-            }
-            QPushButton {
-                background-color: #4a4a4a;
-                color: #ffffff;
-                border: 1px solid #555555;
-                padding: 5px;
-                border-radius: 3px;
-                min-height: 30px;
-            }
-            QPushButton:hover {
-                background-color: #666666;
-            }
-            QComboBox {
-                background-color: #3c3c3c;
-                color: #ffffff;
-                border: 1px solid #555555;
-                padding: 3px;
-                min-height: 25px;
-            }
-            QTreeWidget {
-                background-color: #3c3c3c;
-                color: #ffffff;
-                border: 1px solid #555555;
-            }
-        """)
+        # Set all labels to black
+        self.setStyleSheet("QLabel { color: #000000; }")
 
         self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
 
-        # Scrollable left frame
         self.left_scroll = QScrollArea()
         self.left_scroll.setWidgetResizable(True)
         self.left_frame = QWidget()
         self.left_layout = QVBoxLayout(self.left_frame)
-        self.left_frame.setMinimumWidth(300)  # Minimum width instead of maximum
+        self.left_layout.setAlignment(Qt.AlignTop)
+        self.left_frame.setMinimumWidth(250)
 
         self.variable_frame = QWidget()
         self.variable_layout = QVBoxLayout(self.variable_frame)
@@ -88,8 +62,12 @@ class MultipleRegressionTab(QWidget):
         self.deselect_all_button = QPushButton("Deselect All")
         self.deselect_all_button.setToolTip("Deselect all independent variables")
         self.deselect_all_button.clicked.connect(self.deselect_all)
+        self.feature_selection_button = QPushButton("Select Features (RFE)")
+        self.feature_selection_button.setToolTip("Automatically select top features using RFE")
+        self.feature_selection_button.clicked.connect(self.select_features)
         self.variable_layout.addWidget(self.select_all_button)
         self.variable_layout.addWidget(self.deselect_all_button)
+        self.variable_layout.addWidget(self.feature_selection_button)
 
         self.run_button = QPushButton("Run Regression")
         self.run_button.setToolTip("Fit the regression model")
@@ -106,6 +84,13 @@ class MultipleRegressionTab(QWidget):
         self.clear_button.clicked.connect(self.clear_results)
         self.variable_layout.addWidget(self.clear_button)
 
+        self.cv_check = QCheckBox("Enable Cross-Validation")
+        self.cv_check.setToolTip("Perform k-fold cross-validation")
+        self.cv_folds_entry = QLineEdit("5")
+        self.cv_folds_entry.setToolTip("Number of folds for cross-validation")
+        self.variable_layout.addWidget(self.cv_check)
+        self.variable_layout.addWidget(self.cv_folds_entry)
+
         self.left_layout.addWidget(self.variable_frame)
 
         self.results_frame = QWidget()
@@ -115,23 +100,29 @@ class MultipleRegressionTab(QWidget):
         self.adj_r_squared_label = QLabel("Adjusted R-squared: ")
         self.intercept_label = QLabel("Intercept: ")
         self.vif_label = QLabel("Max VIF: ")
-        self.results_layout.addWidget(self.r_squared_label)
-        self.results_layout.addWidget(self.adj_r_squared_label)
-        self.results_layout.addWidget(self.intercept_label)
-        self.results_layout.addWidget(self.vif_label)
+        self.mae_label = QLabel("MAE: ")
+        self.mse_label = QLabel("MSE: ")
+        self.rmse_label = QLabel("RMSE: ")
+        self.cv_r2_label = QLabel("CV R-squared: ")
+        for label in [self.r_squared_label, self.adj_r_squared_label, self.intercept_label, 
+                      self.vif_label, self.mae_label, self.mse_label, self.rmse_label, self.cv_r2_label]:
+            self.results_layout.addWidget(label)
 
         self.coefficients_tree = QTreeWidget()
         self.coefficients_tree.setHeaderLabels(["Variable", "Coefficient"])
         self.coefficients_tree.setColumnWidth(0, 150)
         self.results_layout.addWidget(self.coefficients_tree)
         self.left_layout.addWidget(self.results_frame)
-        self.left_layout.addStretch()
+        self.left_layout.addStretch(1)
 
         self.left_scroll.setWidget(self.left_frame)
-        self.layout.addWidget(self.left_scroll)
+        self.layout.addWidget(self.left_scroll, stretch=1)
 
+        self.right_scroll = QScrollArea()
+        self.right_scroll.setWidgetResizable(True)
         self.right_frame = QWidget()
         self.right_layout = QVBoxLayout(self.right_frame)
+        self.right_layout.setAlignment(Qt.AlignTop)
         self.stats_frame = QWidget()
         self.stats_layout = QVBoxLayout(self.stats_frame)
         self.stats_frame.setStyleSheet("border: 1px solid #555555; padding: 10px;")
@@ -139,21 +130,27 @@ class MultipleRegressionTab(QWidget):
         self.stats_tree.setHeaderLabels(["Variable", "Count", "Mean", "Std", "Min", "25%", "50%", "75%", "Max"])
         for i in range(self.stats_tree.columnCount()):
             self.stats_tree.setColumnWidth(i, 100)
+        self.stats_tree.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.stats_layout.addWidget(self.stats_tree)
         self.right_layout.addWidget(self.stats_frame)
+        self.right_layout.addStretch(1)
+        self.right_scroll.setWidget(self.right_frame)
+        self.layout.addWidget(self.right_scroll, stretch=2)
 
-        self.layout.addWidget(self.right_frame, stretch=1)
+    def update_theme(self, is_dark_mode):
+        self.is_dark_mode = is_dark_mode
+        # No need for specific style updates; global stylesheet handles it
 
     def update_dropdowns(self, data: pd.DataFrame) -> None:
         self.data = data
-        numerical_columns = data.select_dtypes(include=[np.number]).columns.tolist()
-        if numerical_columns:
-            self.x_list.clear()
-            self.y_combo.clear()
-            self.y_combo.addItems(numerical_columns)
-            for col in numerical_columns:
-                item = QTreeWidgetItem([col])
-                self.x_list.addTopLevelItem(item)
+        all_columns = data.columns.tolist() if data is not None else []
+        self.x_list.clear()
+        self.y_combo.clear()
+        self.y_combo.addItems(all_columns)
+        for col in all_columns:
+            item = QTreeWidgetItem([col])
+            self.x_list.addTopLevelItem(item)
+        if all_columns:
             self.y_combo.setCurrentIndex(0)
 
     def select_all(self):
@@ -163,6 +160,25 @@ class MultipleRegressionTab(QWidget):
     def deselect_all(self):
         for i in range(self.x_list.topLevelItemCount()):
             self.x_list.topLevelItem(i).setSelected(False)
+
+    def select_features(self):
+        if self.data is None or self.y_combo.currentText() == "":
+            QMessageBox.critical(self, "Error", "Please load data and select a dependent variable.")
+            return
+        x_columns = [self.x_list.topLevelItem(i).text(0) for i in range(self.x_list.topLevelItemCount())]
+        y_column = self.y_combo.currentText()
+        X = self.data[x_columns].values
+        Y = self.data[y_column].values
+        if np.any(np.isnan(X)) or np.any(np.isnan(Y)):
+            QMessageBox.critical(self, "Error", "Data contains missing values.")
+            return
+        model = LinearRegression()
+        rfe = RFE(model, n_features_to_select=min(3, len(x_columns)))
+        rfe.fit(X, Y)
+        selected_features = [x_columns[i] for i in range(len(rfe.support_)) if rfe.support_[i]]
+        for i in range(self.x_list.topLevelItemCount()):
+            item = self.x_list.topLevelItem(i)
+            item.setSelected(item.text(0) in selected_features)
 
     def show_3d_plot(self):
         if self.data is None or self.current_y is None or len(self.current_x) < 2:
@@ -175,13 +191,12 @@ class MultipleRegressionTab(QWidget):
         self.plot_window = QMainWindow(self)
         self.plot_window.setWindowTitle("3D Regression Plot")
         self.plot_window.setGeometry(200, 200, 800, 600)
-        self.plot_window.setStyleSheet("background-color: #2b2b2b;")
 
         central_widget = QWidget()
         self.plot_window.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
-        self.plot_view = QWebEngineView()
-        layout.addWidget(self.plot_view)
+        plot_view = QWebEngineView()
+        layout.addWidget(plot_view)
 
         x1_col, x2_col = self.current_x[:2]
         y_col = self.current_y
@@ -191,13 +206,38 @@ class MultipleRegressionTab(QWidget):
         Y_pred = self.last_Y_pred
         residuals = np.abs(Y - Y_pred)
 
-        df = pd.DataFrame({x1_col: X1, x2_col: X2, y_col: Y, 'Predicted': Y_pred, 'Residual': residuals})
+        valid_mask = ~np.isnan(X1) & ~np.isnan(X2) & ~np.isnan(Y) & ~np.isnan(Y_pred) & ~np.isnan(residuals)
+        X1_clean = X1[valid_mask]
+        X2_clean = X2[valid_mask]
+        Y_clean = Y[valid_mask]
+        Y_pred_clean = Y_pred[valid_mask]
+        residuals_clean = residuals[valid_mask]
+
+        if len(X1_clean) == 0:
+            QMessageBox.critical(self, "Error", "No valid data points to plot after removing NaN values.")
+            return
+
+        df = pd.DataFrame({
+            x1_col: X1_clean,
+            x2_col: X2_clean,
+            y_col: Y_clean,
+            'Predicted': Y_pred_clean,
+            'Residual': residuals_clean
+        })
+
+        min_size, max_size = 5, 20
+        residual_min, residual_max = np.min(residuals_clean), np.max(residuals_clean)
+        if residual_max == residual_min:
+            sizes = np.full_like(residuals_clean, min_size)
+        else:
+            sizes = min_size + (max_size - min_size) * (residuals_clean - residual_min) / (residual_max - residual_min)
+
         fig = go.Figure(data=[go.Scatter3d(
             x=df[x1_col], y=df[x2_col], z=df[y_col],
             mode='markers',
             marker=dict(
-                size=residuals * 20,
-                color=Y_pred,
+                size=sizes,
+                color=Y_pred_clean,
                 colorscale='Viridis',
                 opacity=0.6,
                 colorbar=dict(title="Predicted Value")
@@ -207,8 +247,7 @@ class MultipleRegressionTab(QWidget):
             scene=dict(xaxis_title=x1_col, yaxis_title=x2_col, zaxis_title=y_col),
             title="3D Regression Visualization"
         )
-
-        self.plot_view.setHtml(fig.to_html(include_plotlyjs='cdn'))
+        plot_view.setHtml(fig.to_html(include_plotlyjs='cdn'))
         self.plot_window.show()
 
     def run_regression(self):
@@ -233,11 +272,11 @@ class MultipleRegressionTab(QWidget):
             X = self.data[x_columns].values
             Y = self.data[y_column].values
             if np.any(np.isnan(X)) or np.any(np.isnan(Y)):
-                QMessageBox.critical(self, "Error", "Data contains missing values. Please clean it first.")
+                QMessageBox.critical(self, "Error", "Data contains missing values.")
                 return
 
             if X.size == 0 or X.shape[1] == 0:
-                QMessageBox.critical(self, "Error", "No valid data selected for independent variables.")
+                QMessageBox.critical(self, "Error", "No valid data selected.")
                 return
 
             model = LinearRegression()
@@ -250,7 +289,6 @@ class MultipleRegressionTab(QWidget):
             r2 = r2_score(Y, Y_pred)
             n, p = X.shape
             adj_r2 = 1 - (1 - r2) * (n - 1) / (n - p - 1)
-
             vif = [variance_inflation_factor(X, i) for i in range(X.shape[1])] if X.shape[1] > 1 else [0]
             max_vif = max(vif) if vif else 0
 
@@ -258,6 +296,16 @@ class MultipleRegressionTab(QWidget):
             self.adj_r_squared_label.setText(f"Adjusted R-squared: {adj_r2:.2f}")
             self.intercept_label.setText(f"Intercept: {model.intercept_:.2f}")
             self.vif_label.setText(f"Max VIF: {max_vif:.2f}")
+            self.mae_label.setText(f"MAE: {mean_absolute_error(Y, Y_pred):.2f}")
+            self.mse_label.setText(f"MSE: {mean_squared_error(Y, Y_pred):.2f}")
+            self.rmse_label.setText(f"RMSE: {np.sqrt(mean_squared_error(Y, Y_pred)):.2f}")
+
+            if self.cv_check.isChecked():
+                folds = int(self.cv_folds_entry.text())
+                cv_scores = cross_val_score(model, X, Y, cv=folds, scoring='r2')
+                self.cv_r2_label.setText(f"CV R-squared: {np.mean(cv_scores):.2f}")
+            else:
+                self.cv_r2_label.setText("CV R-squared: ")
 
             self.coefficients_tree.clear()
             for i, col in enumerate(x_columns):
@@ -289,6 +337,10 @@ class MultipleRegressionTab(QWidget):
         self.adj_r_squared_label.setText("Adjusted R-squared: ")
         self.intercept_label.setText("Intercept: ")
         self.vif_label.setText("Max VIF: ")
+        self.mae_label.setText("MAE: ")
+        self.mse_label.setText("MSE: ")
+        self.rmse_label.setText("RMSE: ")
+        self.cv_r2_label.setText("CV R-squared: ")
         self.coefficients_tree.clear()
         self.stats_tree.clear()
         self.current_x = []
@@ -298,4 +350,3 @@ class MultipleRegressionTab(QWidget):
         self.last_Y = None
         if self.plot_window and not self.plot_window.isHidden():
             self.plot_window.close()
-            self.plot_view = None
