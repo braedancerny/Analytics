@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, 
-                             QPushButton, QLineEdit, QScrollArea)
+                             QPushButton, QLineEdit, QScrollArea, QMessageBox, QSizePolicy)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtCore import Qt
 import pandas as pd
@@ -18,48 +18,23 @@ class SingleRegressionTab(QWidget):
         self.z_threshold = 3.0
 
         self.setStyleSheet("""
-            QWidget {
-                background-color: #2b2b2b;
-            }
-            QLabel {
-                color: #ffffff;
-                font-size: 14px;
-            }
-            QPushButton {
-                background-color: #4a4a4a;
-                color: #ffffff;
-                border: 1px solid #555555;
-                padding: 5px;
-                border-radius: 3px;
-                min-height: 30px;
-            }
-            QPushButton:hover {
-                background-color: #666666;
-            }
-            QComboBox {
-                background-color: #3c3c3c;
-                color: #ffffff;
-                border: 1px solid #555555;
-                padding: 3px;
-                min-height: 25px;
-            }
-            QLineEdit {
-                background-color: #3c3c3c;
-                color: #ffffff;
-                border: 1px solid #555555;
-                padding: 3px;
-                min-height: 25px;
-            }
+            QWidget { background-color: #2b2b2b; }
+            QLabel { color: #ffffff; font-size: 14px; }
+            QPushButton { background-color: #4a4a4a; color: #ffffff; border: 1px solid #555555; padding: 5px; border-radius: 3px; min-height: 30px; }
+            QPushButton:hover { background-color: #666666; }
+            QComboBox { background-color: #3c3c3c; color: #ffffff; border: 1px solid #555555; padding: 3px; min-height: 25px; }
+            QLineEdit { background-color: #3c3c3c; color: #ffffff; border: 1px solid #555555; padding: 3px; min-height: 25px; }
         """)
 
         self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
 
-        # Scrollable left frame
         self.left_scroll = QScrollArea()
         self.left_scroll.setWidgetResizable(True)
         self.left_frame = QWidget()
         self.left_layout = QVBoxLayout(self.left_frame)
-        self.left_frame.setMinimumWidth(300)  # Minimum width instead of maximum
+        self.left_layout.setAlignment(Qt.AlignTop)
+        self.left_frame.setMinimumWidth(250)
 
         self.y_label = QLabel("Dependent Variable (Y):")
         self.y_combo = QComboBox()
@@ -113,25 +88,27 @@ class SingleRegressionTab(QWidget):
         self.results_layout.addWidget(self.p_value_label)
         self.results_layout.addWidget(self.outlier_count_label)
         self.left_layout.addWidget(self.results_frame)
-        self.left_layout.addStretch()
+        self.left_layout.addStretch(1)
 
         self.left_scroll.setWidget(self.left_frame)
-        self.layout.addWidget(self.left_scroll)
+        self.layout.addWidget(self.left_scroll, stretch=1)
 
         self.plot_view = QWebEngineView()
         self.plot_view.setHtml("<p>Select variables and run regression to see plot.</p>")
-        self.layout.addWidget(self.plot_view, stretch=1)
+        self.plot_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.layout.addWidget(self.plot_view, stretch=3)
 
     def update_dropdowns(self, data: pd.DataFrame) -> None:
         self.data = data
-        numerical_columns = data.select_dtypes(include=[np.number]).columns.tolist()
-        if numerical_columns:
+        all_columns = data.columns.tolist()
+        print("SingleRegressionTab Columns:", all_columns)
+        if all_columns:
             self.x_combo.clear()
             self.y_combo.clear()
-            self.x_combo.addItems(numerical_columns)
-            self.y_combo.addItems(numerical_columns)
+            self.x_combo.addItems(all_columns)
+            self.y_combo.addItems(all_columns)
             self.x_combo.setCurrentIndex(0)
-            self.y_combo.setCurrentIndex(1 if len(numerical_columns) > 1 else 0)
+            self.y_combo.setCurrentIndex(1 if len(all_columns) > 1 else 0)
 
     def calculate_z_threshold(self, X, Y):
         combined_data = np.concatenate([X.flatten(), Y])
