@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
-                             QTreeWidget, QTreeWidgetItem)
+                             QTreeWidget, QTreeWidgetItem, QScrollArea, QSizePolicy)
 from PyQt5.QtCore import Qt
 import pandas as pd
 
@@ -8,60 +8,54 @@ class DataViewerTab(QWidget):
         super().__init__(parent)
         self.data = None
         self.sort_direction = {}
-
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #2b2b2b;
-            }
-            QLabel {
-                color: #ffffff;
-                font-size: 14px;
-            }
-            QLineEdit {
-                background-color: #3c3c3c;
-                color: #ffffff;
-                border: 1px solid #555555;
-                padding: 3px;
-                min-height: 25px;
-            }
-            QTreeWidget {
-                background-color: #3c3c3c;
-                color: #ffffff;
-                border: 1px solid #555555;
-            }
-        """)
+        self.is_dark_mode = True
 
         self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+
         self.filter_frame = QWidget()
         self.filter_layout = QHBoxLayout(self.filter_frame)
         self.filter_label = QLabel("Filter:")
+        self.filter_label.setToolTip("Type to filter rows by selected column")
+        self.update_filter_label_style()
         self.filter_entry = QLineEdit()
-        self.filter_entry.setToolTip("Type to filter rows by selected column")
         self.filter_entry.textChanged.connect(self.apply_filter)
         self.filter_layout.addWidget(self.filter_label)
-        self.filter_layout.addWidget(self.filter_entry)
+        self.filter_layout.addWidget(self.filter_entry, stretch=1)
         self.layout.addWidget(self.filter_frame)
 
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(False)
         self.tree.itemClicked.connect(self.on_column_click)
-        self.layout.addWidget(self.tree)
+        self.tree.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.scroll_area.setWidget(self.tree)
+        self.layout.addWidget(self.scroll_area, stretch=1)
 
-    def update_table(self, data: pd.DataFrame) -> None:
-        self.data = data
-        self._populate_table(data)
+    def update_filter_label_style(self):
+        self.filter_label.setStyleSheet("color: #000000;")
+
+    def update_theme(self, is_dark_mode):
+        self.is_dark_mode = is_dark_mode
+        self.update_filter_label_style()
+
+    def update_table(self, data: pd.DataFrame):
+        self.data = data.copy() if data is not None else None
+        self._populate_table(self.data)
 
     def _populate_table(self, data: pd.DataFrame):
         self.tree.clear()
-        if data is None:
+        if data is None or data.empty:
             return
         self.tree.setColumnCount(len(data.columns))
         self.tree.setHeaderLabels(list(data.columns))
         for col in range(len(data.columns)):
             self.tree.setColumnWidth(col, 100)
-        for index, row in data.iterrows():
-            item = QTreeWidgetItem([str(val) for val in row])
+        for _, row in data.iterrows():
+            item = QTreeWidgetItem([str(val) if pd.notnull(val) else 'NaN' for val in row])
             self.tree.addTopLevelItem(item)
+        self.tree.viewport().update()
 
     def sort_by(self, col):
         if self.data is None:
@@ -78,7 +72,7 @@ class DataViewerTab(QWidget):
         if not filter_text:
             self._populate_table(self.data)
         else:
-            filtered_data = self.data[self.data.apply(lambda row: any(filter_text in str(val).lower() for val in row), axis=1)]
+            filtered_data = self.data[self.data.apply(lambda row: any(filter_text in str(val).lower() for val in row if pd.notnull(val)), axis=1)]
             self._populate_table(filtered_data)
 
     def on_column_click(self, item, column):
