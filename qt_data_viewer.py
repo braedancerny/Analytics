@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
-                             QTreeWidget, QTreeWidgetItem)
+                             QTreeWidget, QTreeWidgetItem, QScrollArea, QSizePolicy)
 from PyQt5.QtCore import Qt
 import pandas as pd
 
@@ -10,28 +10,15 @@ class DataViewerTab(QWidget):
         self.sort_direction = {}
 
         self.setStyleSheet("""
-            QWidget {
-                background-color: #2b2b2b;
-            }
-            QLabel {
-                color: #ffffff;
-                font-size: 14px;
-            }
-            QLineEdit {
-                background-color: #3c3c3c;
-                color: #ffffff;
-                border: 1px solid #555555;
-                padding: 3px;
-                min-height: 25px;
-            }
-            QTreeWidget {
-                background-color: #3c3c3c;
-                color: #ffffff;
-                border: 1px solid #555555;
-            }
+            QWidget { background-color: #2b2b2b; }
+            QLabel { color: #ffffff; font-size: 14px; }
+            QLineEdit { background-color: #3c3c3c; color: #ffffff; border: 1px solid #555555; padding: 3px; min-height: 25px; }
+            QTreeWidget { background-color: #3c3c3c; color: #ffffff; border: 1px solid #555555; }
         """)
 
         self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+
         self.filter_frame = QWidget()
         self.filter_layout = QHBoxLayout(self.filter_frame)
         self.filter_label = QLabel("Filter:")
@@ -39,13 +26,17 @@ class DataViewerTab(QWidget):
         self.filter_entry.setToolTip("Type to filter rows by selected column")
         self.filter_entry.textChanged.connect(self.apply_filter)
         self.filter_layout.addWidget(self.filter_label)
-        self.filter_layout.addWidget(self.filter_entry)
+        self.filter_layout.addWidget(self.filter_entry, stretch=1)
         self.layout.addWidget(self.filter_frame)
 
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(False)
         self.tree.itemClicked.connect(self.on_column_click)
-        self.layout.addWidget(self.tree)
+        self.tree.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.scroll_area.setWidget(self.tree)
+        self.layout.addWidget(self.scroll_area, stretch=1)
 
     def update_table(self, data: pd.DataFrame) -> None:
         self.data = data
