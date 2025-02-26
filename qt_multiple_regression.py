@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, 
                              QPushButton, QTreeWidget, QTreeWidgetItem, QMessageBox, 
-                             QMainWindow, QScrollArea)
+                             QMainWindow, QScrollArea, QSizePolicy)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtCore import Qt
 from sklearn.linear_model import LinearRegression
@@ -24,46 +24,23 @@ class MultipleRegressionTab(QWidget):
         self.plot_view = None
 
         self.setStyleSheet("""
-            QWidget {
-                background-color: #2b2b2b;
-            }
-            QLabel {
-                color: #ffffff;
-                font-size: 14px;
-            }
-            QPushButton {
-                background-color: #4a4a4a;
-                color: #ffffff;
-                border: 1px solid #555555;
-                padding: 5px;
-                border-radius: 3px;
-                min-height: 30px;
-            }
-            QPushButton:hover {
-                background-color: #666666;
-            }
-            QComboBox {
-                background-color: #3c3c3c;
-                color: #ffffff;
-                border: 1px solid #555555;
-                padding: 3px;
-                min-height: 25px;
-            }
-            QTreeWidget {
-                background-color: #3c3c3c;
-                color: #ffffff;
-                border: 1px solid #555555;
-            }
+            QWidget { background-color: #2b2b2b; }
+            QLabel { color: #ffffff; font-size: 14px; }
+            QPushButton { background-color: #4a4a4a; color: #ffffff; border: 1px solid #555555; padding: 5px; border-radius: 3px; min-height: 30px; }
+            QPushButton:hover { background-color: #666666; }
+            QComboBox { background-color: #3c3c3c; color: #ffffff; border: 1px solid #555555; padding: 3px; min-height: 25px; }
+            QTreeWidget { background-color: #3c3c3c; color: #ffffff; border: 1px solid #555555; }
         """)
 
         self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
 
-        # Scrollable left frame
         self.left_scroll = QScrollArea()
         self.left_scroll.setWidgetResizable(True)
         self.left_frame = QWidget()
         self.left_layout = QVBoxLayout(self.left_frame)
-        self.left_frame.setMinimumWidth(300)  # Minimum width instead of maximum
+        self.left_layout.setAlignment(Qt.AlignTop)
+        self.left_frame.setMinimumWidth(250)
 
         self.variable_frame = QWidget()
         self.variable_layout = QVBoxLayout(self.variable_frame)
@@ -125,13 +102,16 @@ class MultipleRegressionTab(QWidget):
         self.coefficients_tree.setColumnWidth(0, 150)
         self.results_layout.addWidget(self.coefficients_tree)
         self.left_layout.addWidget(self.results_frame)
-        self.left_layout.addStretch()
+        self.left_layout.addStretch(1)
 
         self.left_scroll.setWidget(self.left_frame)
-        self.layout.addWidget(self.left_scroll)
+        self.layout.addWidget(self.left_scroll, stretch=1)
 
+        self.right_scroll = QScrollArea()
+        self.right_scroll.setWidgetResizable(True)
         self.right_frame = QWidget()
         self.right_layout = QVBoxLayout(self.right_frame)
+        self.right_layout.setAlignment(Qt.AlignTop)
         self.stats_frame = QWidget()
         self.stats_layout = QVBoxLayout(self.stats_frame)
         self.stats_frame.setStyleSheet("border: 1px solid #555555; padding: 10px;")
@@ -139,19 +119,22 @@ class MultipleRegressionTab(QWidget):
         self.stats_tree.setHeaderLabels(["Variable", "Count", "Mean", "Std", "Min", "25%", "50%", "75%", "Max"])
         for i in range(self.stats_tree.columnCount()):
             self.stats_tree.setColumnWidth(i, 100)
+        self.stats_tree.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.stats_layout.addWidget(self.stats_tree)
         self.right_layout.addWidget(self.stats_frame)
-
-        self.layout.addWidget(self.right_frame, stretch=1)
+        self.right_layout.addStretch(1)
+        self.right_scroll.setWidget(self.right_frame)
+        self.layout.addWidget(self.right_scroll, stretch=2)
 
     def update_dropdowns(self, data: pd.DataFrame) -> None:
         self.data = data
-        numerical_columns = data.select_dtypes(include=[np.number]).columns.tolist()
-        if numerical_columns:
+        all_columns = data.columns.tolist()
+        print("MultipleRegressionTab Columns:", all_columns)
+        if all_columns:
             self.x_list.clear()
             self.y_combo.clear()
-            self.y_combo.addItems(numerical_columns)
-            for col in numerical_columns:
+            self.y_combo.addItems(all_columns)
+            for col in all_columns:
                 item = QTreeWidgetItem([col])
                 self.x_list.addTopLevelItem(item)
             self.y_combo.setCurrentIndex(0)
