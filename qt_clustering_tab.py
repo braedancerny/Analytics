@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, 
                              QPushButton, QCheckBox, QLineEdit, QTreeWidget, 
-                             QTreeWidgetItem, QScrollArea, QMessageBox)
+                             QTreeWidgetItem, QScrollArea, QMessageBox, QSizePolicy)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtCore import Qt
 import pandas as pd
@@ -20,58 +20,20 @@ class ClusteringTab(QWidget):
         self.current_algorithm = "K-Means"
         self.auto_mode = True
         self.X_scaled = None
+        self.is_dark_mode = True
 
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #2b2b2b;
-            }
-            QLabel {
-                color: #ffffff;
-                font-size: 14px;
-            }
-            QPushButton {
-                background-color: #4a4a4a;
-                color: #ffffff;
-                border: 1px solid #555555;
-                padding: 5px;
-                border-radius: 3px;
-                min-height: 30px;
-            }
-            QPushButton:hover {
-                background-color: #666666;
-            }
-            QComboBox {
-                background-color: #3c3c3c;
-                color: #ffffff;
-                border: 1px solid #555555;
-                padding: 3px;
-                min-height: 25px;
-            }
-            QLineEdit {
-                background-color: #3c3c3c;
-                color: #ffffff;
-                border: 1px solid #555555;
-                padding: 3px;
-                min-height: 25px;
-            }
-            QCheckBox {
-                color: #ffffff;
-            }
-            QTreeWidget {
-                background-color: #3c3c3c;
-                color: #ffffff;
-                border: 1px solid #555555;
-            }
-        """)
+        # Set all labels to black
+        self.setStyleSheet("QLabel { color: #000000; }")
 
         self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
 
-        # Scrollable left frame
         self.left_scroll = QScrollArea()
         self.left_scroll.setWidgetResizable(True)
         self.left_frame = QWidget()
         self.left_layout = QVBoxLayout(self.left_frame)
-        self.left_frame.setMinimumWidth(300)
+        self.left_layout.setAlignment(Qt.AlignTop)
+        self.left_frame.setMinimumWidth(250)
 
         self.algorithm_label = QLabel("Select Clustering Algorithm:")
         self.algorithm_combo = QComboBox()
@@ -129,23 +91,28 @@ class ClusteringTab(QWidget):
 
         self.silhouette_label = QLabel("Silhouette Score: ")
         self.left_layout.addWidget(self.silhouette_label)
-        self.left_layout.addStretch()
+        self.left_layout.addStretch(1)
 
         self.left_scroll.setWidget(self.left_frame)
-        self.layout.addWidget(self.left_scroll)
+        self.layout.addWidget(self.left_scroll, stretch=1)
 
         self.plot_view = QWebEngineView()
         self.plot_view.setHtml("<p>Select features and run clustering to see plot.</p>")
-        self.layout.addWidget(self.plot_view, stretch=1)
+        self.plot_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.layout.addWidget(self.plot_view, stretch=3)
+
+    def update_theme(self, is_dark_mode):
+        self.is_dark_mode = is_dark_mode
+        # No need for specific style updates; global stylesheet handles it
 
     def update_dropdowns(self, data: pd.DataFrame) -> None:
         self.data = data
-        numerical_columns = data.select_dtypes(include=[np.number]).columns.tolist()
+        all_columns = data.columns.tolist() if data is not None else []
         self.feature_list.clear()
-        for col in numerical_columns:
+        for col in all_columns:
             item = QTreeWidgetItem([col])
             self.feature_list.addTopLevelItem(item)
-        if len(numerical_columns) >= 2:
+        if len(all_columns) >= 2:
             self.feature_list.topLevelItem(0).setSelected(True)
             self.feature_list.topLevelItem(1).setSelected(True)
 
@@ -167,7 +134,7 @@ class ClusteringTab(QWidget):
         try:
             X = self.data[selected_features].values
             if np.any(np.isnan(X)):
-                QMessageBox.critical(self, "Error", "Data contains missing values. Please clean it first.")
+                QMessageBox.critical(self, "Error", "Data contains missing values.")
                 return
             self.X_scaled = StandardScaler().fit_transform(X)
 
@@ -263,9 +230,4 @@ class ClusteringTab(QWidget):
 
     def clear_plot(self):
         self.plot_view.setHtml("<p>Select features and run clustering to see plot.</p>")
-
-    def save_plot(self, file_path):
-        if self.plot_view.page():
-            html = self.plot_view.page().toHtml()
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(html)
+        self.silhouette_label.setText("Silhouette Score: ")
