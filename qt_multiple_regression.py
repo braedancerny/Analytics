@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 import plotly.graph_objects as go
+import plotly.io as pio
 
 class MultipleRegressionTab(QWidget):
     def __init__(self, parent=None):
@@ -174,13 +175,52 @@ class MultipleRegressionTab(QWidget):
         Y_pred = self.last_Y_pred
         residuals = np.abs(Y - Y_pred)
 
-        df = pd.DataFrame({x1_col: X1, x2_col: X2, y_col: Y, 'Predicted': Y_pred, 'Residual': residuals})
+        # Debug prints to inspect data
+        print("X1:", X1)
+        print("X2:", X2)
+        print("Y:", Y)
+        print("Y_pred:", Y_pred)
+        print("Residuals:", residuals)
+
+        # Remove NaN values to ensure plotting
+        valid_mask = ~np.isnan(X1) & ~np.isnan(X2) & ~np.isnan(Y) & ~np.isnan(Y_pred) & ~np.isnan(residuals)
+        X1_clean = X1[valid_mask]
+        X2_clean = X2[valid_mask]
+        Y_clean = Y[valid_mask]
+        Y_pred_clean = Y_pred[valid_mask]
+        residuals_clean = residuals[valid_mask]
+
+        print("Cleaned X1:", X1_clean)
+        print("Cleaned X2:", X2_clean)
+        print("Cleaned Y:", Y_clean)
+        print("Cleaned Residuals:", residuals_clean)
+
+        if len(X1_clean) == 0:
+            QMessageBox.critical(self, "Error", "No valid data points to plot after removing NaN values.")
+            return
+
+        df = pd.DataFrame({
+            x1_col: X1_clean,
+            x2_col: X2_clean,
+            y_col: Y_clean,
+            'Predicted': Y_pred_clean,
+            'Residual': residuals_clean
+        })
+
+        # Scale residuals to a visible range (5 to 20)
+        min_size, max_size = 5, 20
+        residual_min, residual_max = np.min(residuals_clean), np.max(residuals_clean)
+        if residual_max == residual_min:  # Avoid division by zero
+            sizes = np.full_like(residuals_clean, min_size)
+        else:
+            sizes = min_size + (max_size - min_size) * (residuals_clean - residual_min) / (residual_max - residual_min)
+
         fig = go.Figure(data=[go.Scatter3d(
             x=df[x1_col], y=df[x2_col], z=df[y_col],
             mode='markers',
             marker=dict(
-                size=residuals * 20,
-                color=Y_pred,
+                size=sizes,  # Scaled sizes instead of residuals * 5
+                color=Y_pred_clean,
                 colorscale='Viridis',
                 opacity=0.6,
                 colorbar=dict(title="Predicted Value")
@@ -191,6 +231,7 @@ class MultipleRegressionTab(QWidget):
             title="3D Regression Visualization"
         )
 
+        # Use default WebGL rendering
         self.plot_view.setHtml(fig.to_html(include_plotlyjs='cdn'))
         self.plot_window.show()
 
