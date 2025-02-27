@@ -1,121 +1,78 @@
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, 
-                             QPushButton, QTreeWidget, QTreeWidgetItem, QMessageBox,
-                             QMainWindow)
-from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QComboBox, 
+                             QPushButton, QMessageBox, QTableWidget, QTableWidgetItem)
+from PyQt5.QtCore import QThread, pyqtSignal
 import pandas as pd
-import numpy as np
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+
+class PreprocessThread(QThread):
+    finished = pyqtSignal(pd.DataFrame)
+
+    def __init__(self, data, missing_method, scaling_method):
+        super().__init__()
+        self.data = data
+        self.missing_method = missing_method
+        self.scaling_method = scaling_method
+
+    def run(self):
+        processed_data = self.data.copy()
+        if self.missing_method == "Drop":
+            processed_data.dropna(inplace=True)
+        elif self.missing_method == "Fill with Mean":
+            processed_data.fillna(processed_data.mean(), inplace=True)
+        if self.scaling_method == "Standardize":
+            processed_data = (processed_data - processed_data.mean()) / processed_data.std()
+        elif self.scaling_method == "Normalize":
+            processed_data = (processed_data - processed_data.min()) / (processed_data.max() - processed_data.min())
+        self.finished.emit(processed_data)
 
 class DataPreprocessingTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.main_window = parent
         self.data = None
-        self.is_dark_mode = True
 
         self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-
         self.missing_label = QLabel("Handle Missing Values:")
         self.missing_combo = QComboBox()
-        self.missing_combo.addItems(["Fill with Mean", "Fill with Median", "Fill with Zero", "Drop Rows"])
-        self.missing_combo.setToolTip("Select method to handle missing values")
-
-        self.scaling_label = QLabel("Scale Features:")
+        self.missing_combo.addItems(["Drop", "Fill with Mean"])
+        self.scaling_label = QLabel("Scaling Method:")
         self.scaling_combo = QComboBox()
-        self.scaling_combo.addItems(["None", "Standard Scaler", "Min-Max Scaler"])
-        self.scaling_combo.setToolTip("Choose feature scaling method")
+        self.scaling_combo.addItems(["None", "Standardize", "Normalize"])
+        self.apply_button = QPushButton("Apply Preprocessing")
+        self.apply_button.clicked.connect(self.apply_preprocessing)
+        self.table = QTableWidget()
 
-        self.update_label_styles()
         self.layout.addWidget(self.missing_label)
         self.layout.addWidget(self.missing_combo)
         self.layout.addWidget(self.scaling_label)
         self.layout.addWidget(self.scaling_combo)
-
-        self.apply_button = QPushButton("Apply Preprocessing")
-        self.apply_button.setToolTip("Apply selected preprocessing steps")
-        self.apply_button.clicked.connect(self.apply_preprocessing)
         self.layout.addWidget(self.apply_button)
+        self.layout.addWidget(self.table)
 
-        self.data_viewer = QTreeWidget()
-        self.data_viewer.setHeaderHidden(False)
-        self.layout.addWidget(self.data_viewer, stretch=1)
-
-    def update_label_styles(self):
-        self.missing_label.setStyleSheet("color: #000000;")
-        self.scaling_label.setStyleSheet("color: #000000;")
-
-    def update_theme(self, is_dark_mode):
-        self.is_dark_mode = is_dark_mode
-        self.update_label_styles()
-
-    def update_dropdowns(self, data: pd.DataFrame):
-        self.data = data.copy() if data is not None else None
+    def update_data(self, data: pd.DataFrame):
+        self.data = data
         self._populate_table(self.data)
 
-    def _populate_table(self, data: pd.DataFrame):
-        self.data_viewer.clear()
-        if data is None or data.empty:
-            return
-        self.data_viewer.setColumnCount(len(data.columns))
-        self.data_viewer.setHeaderLabels(list(data.columns))
-        for col in range(len(data.columns)):
-            self.data_viewer.setColumnWidth(col, 100)
-        for _, row in data.iterrows():
-            item = QTreeWidgetItem([str(val) if pd.notnull(val) else 'NaN' for val in row])
-            self.data_viewer.addTopLevelItem(item)
-        self.data_viewer.viewport().update()
+    def _populate_table(self, data):
+        self.table.clear()
+        self.table.setRowCount(data.shape[0])
+        self.table.setColumnCount(data.shape[1])
+        self.table.setHorizontalHeaderLabels(data.columns)
+        for i in range(data.shape[0]):
+            for j in range(data.shape[1]):
+                self.table.setItem(i, j, QTableWidgetItem(str(data.iloc[i, j])))
 
     def apply_preprocessing(self):
-        global data
-        if self.data is None:
+        if self.main_window.original_data is None:
             QMessageBox.critical(self, "Error", "No data loaded.")
             return
-        
-        processed_data = self.data.copy()
-        print("Before handling NaN:\n", processed_data.to_string())
+        self.thread = PreprocessThread(self.main_window.original_data, self.missing_combo.currentText(), self.scaling_combo.currentText())
+        self.thread.finished.connect(self.on_preprocessing_finished)
+        self.thread.start()
 
-        # Handle missing values
-        missing_method = self.missing_combo.currentText()
-        if missing_method == "Fill with Mean":
-            processed_data.fillna(processed_data.mean(), inplace=True)
-        elif missing_method == "Fill with Median":
-            processed_data.fillna(processed_data.median(), inplace=True)
-        elif missing_method == "Fill with Zero":
-            processed_data.fillna(0, inplace=True)
-        elif missing_method == "Drop Rows":
-            processed_data.dropna(inplace=True)
-
-        # Apply scaling
-        scaling_method = self.scaling_combo.currentText()
-        numeric_cols = processed_data.select_dtypes(include=['float64', 'int64']).columns
-        if scaling_method == "Standard Scaler":
-            scaler = StandardScaler()
-            processed_data[numeric_cols] = scaler.fit_transform(processed_data[numeric_cols])
-        elif scaling_method == "Min-Max Scaler":
-            scaler = MinMaxScaler()
-            processed_data[numeric_cols] = scaler.fit_transform(processed_data[numeric_cols])
-
-        print("After handling NaN and scaling:\n", processed_data.to_string())
-
-        # Update local and global data
+    def on_preprocessing_finished(self, processed_data):
         self.data = processed_data
-        data = processed_data.copy()
-
-        # Refresh the preprocessing table
+        self.main_window.preprocessed_data = processed_data
         self._populate_table(self.data)
-
-        # Update all tabs
-        main_window = self.get_main_window()
-        if main_window:
-            main_window.update_tabs()
-        else:
-            QMessageBox.critical(self, "Error", "Could not update other tabs.")
+        self.main_window.save_state()
+        self.main_window.update_tabs()
         QMessageBox.information(self, "Success", "Preprocessing applied successfully.")
-
-    def get_main_window(self):
-        widget = self
-        while widget is not None:
-            if isinstance(widget, QMainWindow):
-                return widget
-            widget = widget.parent()
-        return None
