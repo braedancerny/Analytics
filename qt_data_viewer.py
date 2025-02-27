@@ -1,11 +1,12 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
-                             QTreeWidget, QTreeWidgetItem, QScrollArea, QSizePolicy)
+                             QTreeWidget, QTreeWidgetItem, QScrollArea, QSizePolicy, QMessageBox)
 from PyQt5.QtCore import Qt
 import pandas as pd
 
 class DataViewerTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.main_window = parent
         self.data = None
         self.sort_direction = {}
         self.is_dark_mode = True
@@ -23,6 +24,9 @@ class DataViewerTab(QWidget):
         self.filter_layout.addWidget(self.filter_label)
         self.filter_layout.addWidget(self.filter_entry, stretch=1)
         self.layout.addWidget(self.filter_frame)
+
+        self.status_label = QLabel("Data: Raw")
+        self.layout.addWidget(self.status_label)
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -42,6 +46,7 @@ class DataViewerTab(QWidget):
 
     def update_table(self, data: pd.DataFrame):
         self.data = data.copy() if data is not None else None
+        self.status_label.setText("Data: Preprocessed" if self.main_window.preprocessed_data is not None else "Data: Raw")
         self._populate_table(self.data)
 
     def _populate_table(self, data: pd.DataFrame):
