@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget, QTreeWidgetItem, 
-                             QComboBox, QPushButton)
+                             QComboBox, QPushButton, QMessageBox)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtCore import Qt
 import pandas as pd
@@ -8,8 +8,9 @@ import plotly.express as px
 class CorrelationHeatmapTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.main_window = parent
         self.data = None
-        self.is_dark_mode = True  # Track theme state
+        self.is_dark_mode = True
 
         self.layout = QHBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
@@ -36,23 +37,27 @@ class CorrelationHeatmapTab(QWidget):
         self.layout.addWidget(self.plot_view, stretch=3)
 
     def update_theme(self, is_dark_mode):
-        """Sync theme with MainWindow."""
         self.is_dark_mode = is_dark_mode
-        # No specific label styling needed here, but method is required for compatibility
 
     def update_dropdowns(self, data: pd.DataFrame):
-        self.data = data
+        self.data = data.copy() if data is not None else None
+        all_columns = data.columns.tolist() if data is not None else []
         self.var_list.clear()
-        if data is not None:
-            for col in data.columns:
+        if all_columns:
+            for col in all_columns:
                 item = QTreeWidgetItem([col])
                 self.var_list.addTopLevelItem(item)
 
     def generate_heatmap(self):
+        if self.main_window.preprocessed_data is None:
+            QMessageBox.warning(self, "Warning", "Please preprocess the data first.")
+            return
         if self.data is None:
+            QMessageBox.critical(self, "Error", "No data loaded.")
             return
         selected_items = self.var_list.selectedItems()
         if len(selected_items) < 2:
+            QMessageBox.critical(self, "Error", "Select at least two variables.")
             return
         selected_vars = [item.text(0) for item in selected_items]
         method = self.method_combo.currentText()
