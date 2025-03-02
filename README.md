@@ -1,4 +1,4 @@
-**PyQt5 Analytics Program**
+**PyQt5 Analytics Program** WORK IN PROGRESS
 
 This is a desktop application built with PyQt5 that provides a comprehensive set of tools for data analysis and visualization. It includes features like data preprocessing, time series analysis, machine learning, statistical tests, clustering, regression analysis, and interactive data visualization using Plotly. Designed for analysts, researchers, and data enthusiasts, this program offers an intuitive graphical interface to explore and analyze data efficiently.
 
@@ -147,15 +147,6 @@ This feature ensures flexibility during data preparation.
 
 ---
 
-Security
-
-For basic data security, the program includes an encryption feature:
-- Encrypt your data using a provided encryption key.
-- Decrypt it when needed for analysis.
-
-This is particularly useful for sensitive datasets.
-
----
 
 Contributing
 
@@ -166,10 +157,4 @@ We welcome contributions to enhance the PyQt5 Analytics Program! To contribute:
 3. Commit your changes and push to your fork.
 4. Submit a pull request with a clear description of your changes.
 
-Please follow standard Python coding conventions and include tests where possible.
 
----
-
-License
-
-This program is released under the MIT License. See the LICENSE file for more details.
